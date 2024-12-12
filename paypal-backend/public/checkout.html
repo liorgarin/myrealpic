@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>PayPal Checkout</title>
+</head>
+<body>
+<h1>Redirecting to PayPal...</h1>
+<script>
+  (async function() {
+    // Suppose we get package price via query param ?amount=9
+    const urlParams = new URLSearchParams(window.location.search);
+    const amount = urlParams.get('amount') || '9.00';
+    // Create order
+    const response = await fetch('/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount })
+    });
+    const data = await response.json();
+    // Redirect user to PayPal approval link
+    window.location.href = data.approveLink;
+  })();
+</script>
+</body>
+</html>

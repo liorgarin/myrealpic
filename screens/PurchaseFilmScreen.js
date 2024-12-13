@@ -7,7 +7,10 @@ import {
   Alert,
   Modal,
   TextInput,
-  SafeAreaView
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { DrawerToggleButton } from '@react-navigation/drawer';
@@ -25,15 +28,13 @@ const PurchaseFilmScreen = () => {
   const [demoMode, setDemoMode] = useState(false);
   const [isNamingAlbum, setIsNamingAlbum] = useState(false);
   const [albumName, setAlbumName] = useState('');
-  
+
   const [isPaymentModalVisible, setIsPaymentModalVisible] = useState(false);
   const [showPayPalWebView, setShowPayPalWebView] = useState(false);
   const [payPalCheckoutUrl, setPayPalCheckoutUrl] = useState(null);
 
-  // New states for coupon flow
-  const [isCouponModalVisible, setIsCouponModalVisible] = useState(false);
   const [couponCode, setCouponCode] = useState('');
-  const [validCouponCode, setValidCouponCode] = useState(null); // store the valid coupon code once verified
+  const [validCouponCode, setValidCouponCode] = useState(null);
 
   const navigation = useNavigation();
 
@@ -72,6 +73,8 @@ const PurchaseFilmScreen = () => {
       description: 'Perfect for extended travels and great stories'
     },
   ];
+
+  const mostPopularPackage = filmPackages.find(pkg => pkg.mostPopular);
 
   const fetchRandomPhoto = async (albumName) => {
     try {
@@ -125,30 +128,28 @@ const PurchaseFilmScreen = () => {
     setIsPaymentModalVisible(true);
   };
 
-  const handleCouponClick = () => {
-    // Instead of directly opening naming album,
-    // open coupon input modal
-    setCouponCode('');
-    setIsCouponModalVisible(true);
-  };
-
   const verifyCoupon = async () => {
-    // Check if a doc with code == couponCode exists in `coupons` collection
-    if (!couponCode.trim()) {
+    const enteredCode = couponCode.trim();
+    if (!enteredCode) {
       Alert.alert('Error', 'Please enter a coupon code.');
       return;
     }
 
-    const couponRef = doc(db, 'coupons', couponCode.trim());
-    const couponSnap = await getDoc(couponRef);
-    if (couponSnap.exists()) {
-      // Valid coupon
-      setIsCouponModalVisible(false);
-      setValidCouponCode(couponCode.trim());
-      setCouponAlbum(true);
-      setIsNamingAlbum(true);
-    } else {
-      Alert.alert('Invalid Coupon', 'This coupon code is not valid. Please try again.');
+    console.log('Verifying coupon:', enteredCode);
+    try {
+      const couponRef = doc(db, 'coupons', enteredCode);
+      const couponSnap = await getDoc(couponRef);
+      if (couponSnap.exists()) {
+        console.log('Valid coupon data:', couponSnap.data());
+        setValidCouponCode(enteredCode);
+        setCouponAlbum(true);
+        setIsNamingAlbum(true);
+      } else {
+        Alert.alert('Invalid Coupon', 'This coupon code is not valid. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error verifying coupon:', error);
+      Alert.alert('Error', 'Failed to verify coupon. Please try again later.');
     }
   };
 
@@ -167,12 +168,11 @@ const PurchaseFilmScreen = () => {
 
       const coverImage = await fetchRandomPhoto(albumName);
 
-      // Generate a unique order number
       const ordernum = 'ORD' + Date.now();
 
       await addDoc(collection(db, 'albums'), {
         userId: userId,
-        name: albumName,
+        name: albumName.trim(),
         photoLimit: 6,
         photos: [],
         status: 'Active',
@@ -184,7 +184,7 @@ const PurchaseFilmScreen = () => {
         ordernum: ordernum
       });
 
-      // Delete the used coupon from 'coupons' collection
+      // Delete coupon if allowed by rules
       if (validCouponCode) {
         const couponRef = doc(db, 'coupons', validCouponCode);
         await deleteDoc(couponRef);
@@ -194,6 +194,7 @@ const PurchaseFilmScreen = () => {
       setIsNamingAlbum(false);
       setCouponAlbum(false);
       setValidCouponCode(null);
+      setAlbumName('');
       navigation.navigate('Home');
     } catch (error) {
       console.error('Error creating coupon album: ', error.message);
@@ -222,7 +223,7 @@ const PurchaseFilmScreen = () => {
 
       await addDoc(collection(db, 'albums'), {
         userId: userId,
-        name: albumName,
+        name: albumName.trim(),
         photoLimit: photoLimit,
         photos: [],
         status: 'Active',
@@ -236,6 +237,7 @@ const PurchaseFilmScreen = () => {
 
       Alert.alert('Success', 'Album created successfully!');
       setIsNamingAlbum(false);
+      setAlbumName('');
       navigation.navigate('Home');
     } catch (error) {
       console.error('Error creating album: ', error.message);
@@ -253,7 +255,7 @@ const PurchaseFilmScreen = () => {
 
   const onWebViewNavigationStateChange = (navState) => {
     const { url } = navState;
-    const successUrl = 'https://your-server.com/success';
+    const successUrl = 'https://your-server.com/success'; 
     const cancelUrl = 'https://your-server.com/cancel';
 
     if (url.startsWith(successUrl)) {
@@ -291,184 +293,171 @@ const PurchaseFilmScreen = () => {
   };
 
   const isPackageSelected = !!selectedPackage;
-  const mostPopularPackage = filmPackages.find(pkg => pkg.mostPopular);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Text style={styles.mainTitle}>Choose Your Film Package</Text>
-        <Text style={styles.subtitle}>Select the number of photos that fits your needs.</Text>
+      <KeyboardAvoidingView 
+        style={{flex:1}} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps='handled'>
+          <Text style={styles.mainTitle}>Choose Your Film Package</Text>
+          <Text style={styles.subtitle}>Select the number of photos that fits your needs.</Text>
 
-        <View style={styles.packagesContainer}>
-          {mostPopularPackage && (
-            <View style={styles.mostPopularGlobalBadge}>
-              <Text style={styles.mostPopularText}>MOST POPULAR</Text>
+          <View style={styles.packagesContainer}>
+            {mostPopularPackage && (
+              <View style={styles.mostPopularGlobalBadge}>
+                <Text style={styles.mostPopularText}>MOST POPULAR</Text>
+              </View>
+            )}
+
+            <View style={styles.packagesRow}>
+              {filmPackages.map((pkg, index) => {
+                const isSelected = selectedPackage && selectedPackage.label === pkg.label;
+                return (
+                  <View key={index} style={[styles.packageCard, isSelected && styles.packageSelected]}>
+                    <View style={{ alignItems: 'center', paddingHorizontal: 4 }}>
+                      <Text style={styles.packageTitle}>{pkg.label}</Text>
+                      <Text style={styles.packagePrice}>{pkg.price}</Text>
+                      <Text style={styles.packageDescription}>{pkg.description}</Text>
+                    </View>
+                    <View style={{ width: '100%', alignItems: 'center' }}>
+                      <TouchableOpacity
+                        style={[styles.chooseButton, isSelected && styles.chooseButtonSelected]}
+                        onPress={() => handlePackageSelect(pkg)}
+                      >
+                        {isSelected ? (
+                          <Ionicons name="checkmark" size={16} color="#FFF" />
+                        ) : (
+                          <Text style={styles.chooseButtonText}>choose</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {isPackageSelected && (
+            <View style={styles.buttonsContainer}>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#007BFF' }]}
+                onPress={handlePurchaseConfirm}
+              >
+                <Text style={styles.buttonText}>Purchase a New Film</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#FFA500', marginTop: 12 }]}
+                onPress={handleDemoConfirm}
+              >
+                <Text style={styles.buttonText}>Add as Demo Film</Text>
+              </TouchableOpacity>
             </View>
           )}
 
-          <View style={styles.packagesRow}>
-            {filmPackages.map((pkg, index) => {
-              const isSelected = selectedPackage && selectedPackage.label === pkg.label;
-              return (
-                <View key={index} style={[styles.packageCard, isSelected && styles.packageSelected]}>
-                  <View style={{ alignItems: 'center', paddingHorizontal: 4 }}>
-                    <Text style={styles.packageTitle}>{pkg.label}</Text>
-                    <Text style={styles.packagePrice}>{pkg.price}</Text>
-                    <Text style={styles.packageDescription}>{pkg.description}</Text>
-                  </View>
-                  <View style={{ width: '100%', alignItems: 'center' }}>
-                    <TouchableOpacity
-                      style={[styles.chooseButton, isSelected && styles.chooseButtonSelected]}
-                      onPress={() => handlePackageSelect(pkg)}
-                    >
-                      {isSelected ? (
-                        <Ionicons name="checkmark" size={16} color="#FFF" />
-                      ) : (
-                        <Text style={styles.chooseButtonText}>choose</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        {isPackageSelected && (
-          <>
+          <View style={styles.couponContainer}>
+            <Text style={styles.couponTitle}>Have a Coupon?</Text>
+            <TextInput
+              style={styles.couponInput}
+              placeholder="Enter coupon code"
+              value={couponCode}
+              onChangeText={setCouponCode}
+            />
             <TouchableOpacity
-              style={[styles.fullWidthButton, { backgroundColor: '#007BFF', marginTop: 24 }]}
-              onPress={handlePurchaseConfirm}
+              style={[styles.fullWidthButton, { backgroundColor: '#007BFF', marginTop: 12 }]}
+              onPress={verifyCoupon}
             >
-              <Text style={styles.fullWidthButtonText}>Purchase a New Film</Text>
+              <Text style={styles.fullWidthButtonText}>Confirm Coupon</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.fullWidthButton, { backgroundColor: '#FFA500', marginTop: 12 }]}
-              onPress={handleDemoConfirm}
-            >
-              <Text style={styles.fullWidthButtonText}>Add as Demo Film</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {!isPackageSelected && (
-          <TouchableOpacity
-            style={[styles.couponBar, { marginTop: 24 }]}
-            onPress={handleCouponClick}
-          >
-            <Text style={styles.couponBarText}>got coupon ? click here</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Payment Modal */}
-        <Modal visible={isPaymentModalVisible} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Complete Your Payment</Text>
-              <Text style={{ marginBottom: 16 }}>
-                Price: {selectedPackage ? selectedPackage.price : ''}
-              </Text>
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.modalPrimaryButton} onPress={startPaypalCheckout}>
-                  <Text style={styles.modalButtonText}>Pay with PayPal</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={() => setIsPaymentModalVisible(false)}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
           </View>
-        </Modal>
 
-        {/* PayPal WebView Modal */}
-        <Modal visible={showPayPalWebView} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { width: '90%', height: '80%' }]}>
-              <Text style={styles.modalTitle}>Pay with PayPal</Text>
-              <View style={{ flex: 1, width: '100%' }}>
-                <WebView
-                  source={{ uri: payPalCheckoutUrl ? payPalCheckoutUrl : 'https://example.com/checkout' }}
-                  onNavigationStateChange={onWebViewNavigationStateChange}
-                />
-              </View>
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={() => setShowPayPalWebView(false)}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Coupon Code Modal */}
-        <Modal visible={isCouponModalVisible} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Enter Your Coupon Code</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Coupon code"
-                value={couponCode}
-                onChangeText={setCouponCode}
-              />
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.modalPrimaryButton} onPress={verifyCoupon}>
-                  <Text style={styles.modalButtonText}>Apply</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={() => setIsCouponModalVisible(false)}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Album Naming Modal */}
-        <Modal visible={isNamingAlbum} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Name Your Album</Text>
-              {couponAlbum && (
-                <Text style={{ marginBottom: 8, fontSize: 14, textAlign: 'center' }}>
-                  You got a free 6-photo album!
+          {/* Payment Modal */}
+          <Modal visible={isPaymentModalVisible} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Complete Your Payment</Text>
+                <Text style={{ marginBottom: 16 }}>
+                  Price: {selectedPackage ? selectedPackage.price : ''}
                 </Text>
-              )}
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Enter album name"
-                value={albumName}
-                onChangeText={setAlbumName}
-              />
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.modalPrimaryButton} onPress={createAlbum}>
-                  <Text style={styles.modalButtonText}>OK</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={() => {
-                    setIsNamingAlbum(false);
-                    setCouponAlbum(false);
-                    setValidCouponCode(null);
-                  }}
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </TouchableOpacity>
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity style={styles.modalPrimaryButton} onPress={startPaypalCheckout}>
+                    <Text style={styles.modalButtonText}>Pay with PayPal</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalCancelButton}
+                    onPress={() => setIsPaymentModalVisible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
-        </Modal>
+          </Modal>
 
-      </View>
+          {/* PayPal WebView Modal */}
+          <Modal visible={showPayPalWebView} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { width: '90%', height: '80%' }]}>
+                <Text style={styles.modalTitle}>Pay with PayPal</Text>
+                <View style={{ flex: 1, width: '100%' }}>
+                  <WebView
+                    source={{ uri: payPalCheckoutUrl ? payPalCheckoutUrl : 'https://example.com/checkout' }}
+                    onNavigationStateChange={onWebViewNavigationStateChange}
+                  />
+                </View>
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.modalCancelButton}
+                    onPress={() => setShowPayPalWebView(false)}
+                  >
+                    <Text style={styles.modalButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Album Naming Modal */}
+          <Modal visible={isNamingAlbum} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Name Your Album</Text>
+                {couponAlbum && (
+                  <Text style={{ marginBottom: 8, fontSize: 14, textAlign: 'center' }}>
+                    You got a free 6-photo album!
+                  </Text>
+                )}
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Enter album name"
+                  value={albumName}
+                  onChangeText={setAlbumName}
+                />
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity style={styles.modalPrimaryButton} onPress={createAlbum}>
+                    <Text style={styles.modalButtonText}>OK</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalCancelButton}
+                    onPress={() => {
+                      setIsNamingAlbum(false);
+                      setCouponAlbum(false);
+                      setValidCouponCode(null);
+                      setAlbumName('');
+                    }}
+                  >
+                    <Text style={styles.modalButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -482,8 +471,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#ECF4F3',
   },
   container: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: 16,
+    paddingBottom:16,
+    justifyContent: 'flex-start',
   },
   mainTitle: {
     fontSize: 28,
@@ -580,14 +571,18 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: primaryColor,
   },
-  couponBar: {
-    backgroundColor: '#999',
+  buttonsContainer: {
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  button: {
     borderRadius: 8,
     padding: 12,
     alignItems: 'center',
+    width: '80%',
   },
-  couponBarText: {
-    fontSize: 14,
+  buttonText: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFF',
   },
@@ -595,32 +590,54 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     alignItems: 'center',
-    width: '100%',
+    width: '80%',
   },
   fullWidthButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFF',
   },
+  couponContainer: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  couponTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: darkText,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  couponInput: {
+    width: '80%',
+    backgroundColor: '#FFF',
+    borderColor: '#CCC',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    textAlign: 'center'
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding:20
   },
   modalContent: {
     backgroundColor: '#FFF',
-    width: '80%',
+    width: '100%',
+    maxWidth:340,
     borderRadius: 12,
     padding: 20,
-    alignItems: 'center',
+    alignItems: 'center'
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 16,
     color: darkText,
-    textAlign: 'center',
+    textAlign: 'center'
   },
   modalInput: {
     backgroundColor: '#F9F9F9',
@@ -628,29 +645,29 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     width: '100%',
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#DDD',
-    color: '#333',
+    borderWidth:1,
+    borderColor:'#DDD',
+    color:'#333'
   },
   modalButtons: {
     flexDirection: 'row',
-    width: '100%',
+    width:'100%'
   },
   modalPrimaryButton: {
-    flex: 1,
+    flex:1,
     backgroundColor: primaryColor,
-    padding: 12,
-    borderRadius: 8,
-    marginRight: 8,
-    alignItems: 'center',
+    padding:12,
+    borderRadius:8,
+    marginRight:8,
+    alignItems:'center'
   },
   modalCancelButton: {
-    flex: 1,
-    backgroundColor: '#999',
-    padding: 12,
-    borderRadius: 8,
-    marginLeft: 8,
-    alignItems: 'center',
+    flex:1,
+    backgroundColor:'#999',
+    padding:12,
+    borderRadius:8,
+    marginLeft:8,
+    alignItems:'center'
   },
   modalButtonText: {
     color: '#FFF',

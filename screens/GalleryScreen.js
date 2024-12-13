@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, Image, StyleSheet, TouchableOpacity, Modal, Dimensions, Alert } from 'react-native';
-import { doc, onSnapshot, updateDoc, arrayRemove } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, arrayRemove, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const screenWidth = Dimensions.get('window').width;
+const albumSize = (screenWidth - 16 * 2 - 10 * 2) / 3; // Adjust size for albums
 
 const GalleryScreen = ({ route, navigation }) => {
   const albumId = route.params?.albumId || null;
   const albumName = route.params?.albumName || 'Album Gallery';
-  const canDelete = route.params?.canDelete || false; // new parameter to allow deletion
+  const canDelete = route.params?.canDelete || false; // parameter to allow deletion
 
   const [photos, setPhotos] = useState([]);
 
@@ -17,7 +18,7 @@ const GalleryScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     if (albumId) {
-      // Fetch album by ID
+      // Fetch album by ID and listen for changes
       const albumRef = doc(db, 'albums', albumId);
       const unsubscribe = onSnapshot(albumRef, (docSnap) => {
         if (docSnap.exists()) {
@@ -41,6 +42,27 @@ const GalleryScreen = ({ route, navigation }) => {
     setIsModalVisible(false);
   };
 
+  const updateAlbumStatusAfterDeletion = async (albumId) => {
+    try {
+      const albumRef = doc(db, 'albums', albumId);
+      const updatedAlbumSnapshot = await getDoc(albumRef);
+      const albumData = updatedAlbumSnapshot.data();
+
+      let newStatus = 'Active';
+      if (albumData.photos.length === albumData.photoLimit) {
+        newStatus = 'Ready to Print';
+      } else if (albumData.photos.length < albumData.photoLimit) {
+        newStatus = 'Active';
+      }
+
+      await updateDoc(albumRef, {
+        status: newStatus
+      });
+    } catch (error) {
+      console.error('Error updating album status after deletion:', error);
+    }
+  };
+
   const deleteCurrentPhoto = async () => {
     if (selectedPhotoIndex < 0 || selectedPhotoIndex >= photos.length) return;
 
@@ -62,6 +84,9 @@ const GalleryScreen = ({ route, navigation }) => {
               // Update local state
               const updatedPhotos = photos.filter((_, i) => i !== selectedPhotoIndex);
               setPhotos(updatedPhotos);
+
+              // After deletion, update the album status based on new photo count
+              await updateAlbumStatusAfterDeletion(albumId);
 
               if (updatedPhotos.length === 0) {
                 // No photos left, close modal
@@ -140,7 +165,6 @@ const GalleryScreen = ({ route, navigation }) => {
   );
 };
 
-const albumSize = (screenWidth - 16 * 2 - 10 * 2) / 3; // Adjust size for albums
 
 const styles = StyleSheet.create({
   container: {

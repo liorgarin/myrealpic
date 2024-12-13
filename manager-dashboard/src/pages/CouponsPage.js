@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, setDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 // Helper function to generate a random coupon code
 function generateCouponCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
+  let code = 'RP'; // prefix the code with "RP"
   for (let i = 0; i < 6; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -26,7 +26,8 @@ export default function CouponsPage() {
 
   const handleGenerateCoupon = async () => {
     const code = generateCouponCode();
-    await addDoc(collection(db, 'coupons'), { code });
+    // Use setDoc with the doc ID as the code
+    await setDoc(doc(db, 'coupons', code), { code });
   };
 
   const handleDeleteCoupon = async (id) => {

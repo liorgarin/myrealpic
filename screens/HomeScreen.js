@@ -106,20 +106,23 @@ const HomeScreen = (props) => {
       await uploadBytes(photoRef, blob);
       const downloadURL = await getDownloadURL(photoRef);
       const albumRef = doc(db, 'albums', albumId);
-
+  
       await updateDoc(albumRef, {
         photos: arrayUnion(downloadURL),
       });
-
+  
       const updatedAlbumSnapshot = await getDoc(albumRef);
       const albumData = updatedAlbumSnapshot.data();
-
-      if (albumData.photos.length >= albumData.photoLimit) {
-        await updateDoc(albumRef, {
-          status: 'Ready to Print',
-        });
+  
+      let newStatus = 'Active';
+      if (albumData.photos.length === albumData.photoLimit) {
+        newStatus = 'Ready to Print';
       }
-
+      
+      await updateDoc(albumRef, {
+        status: newStatus
+      });
+  
       Alert.alert('Success', 'Photo added to album!');
     } catch (error) {
       Alert.alert('Error', 'Failed to upload photo.');
@@ -128,13 +131,20 @@ const HomeScreen = (props) => {
   };
 
   const openCameraForPhoto = async (album) => {
-    // Directly open camera
+    if (album.photos.length >= album.photoLimit) {
+      Alert.alert(
+        'Album is Full',
+        'This album has reached its photo limit. Delete some photos or add more capacity.'
+      );
+      return;
+    }
+  
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission Denied', 'Need camera permission.');
       return;
     }
-
+  
     const result = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 1 });
     if (!result.canceled && result.assets && result.assets.length > 0) {
       await uploadPhoto(album.id, result.assets[0].uri);
@@ -254,7 +264,7 @@ const HomeScreen = (props) => {
     const album = filmOptionModal.album;
     const albumRef = doc(db, 'albums', album.id);
     const newLimit = album.photoLimit + pkg.photos;
-    // No actual payment, just confirm
+  
     Alert.alert(
       'Add Photos',
       `Add ${pkg.photos} photos for $${pkg.price}?`,
@@ -266,6 +276,25 @@ const HomeScreen = (props) => {
             await updateDoc(albumRef, {
               photoLimit: newLimit
             });
+  
+            // Re-fetch album data
+            const updatedAlbumSnap = await getDoc(albumRef);
+            const updatedAlbum = updatedAlbumSnap.data();
+  
+            // Check the current number of photos
+            let newStatus = 'Active';
+            if (updatedAlbum.photos.length === updatedAlbum.photoLimit) {
+              newStatus = 'Ready to Print';
+            }
+            // If after increasing limit photos < limit, set Active
+            else if (updatedAlbum.photos.length < updatedAlbum.photoLimit) {
+              newStatus = 'Active';
+            }
+  
+            await updateDoc(albumRef, {
+              status: newStatus
+            });
+  
             Alert.alert('Success', `Photo limit updated to ${newLimit}!`);
             closeFilmOptionModal();
           }
@@ -275,13 +304,21 @@ const HomeScreen = (props) => {
   };
 
   const handlePlusButtonPress = async (album) => {
-    if (album.demoMode === 'yes') {
-      Alert.alert('Upgrade Required', 'Please upgrade to real film first.');
+    // Remove this:
+    // if (album.demoMode === 'yes') {
+    //   Alert.alert('Upgrade Required', 'Please upgrade to real film first.');
+    //   return;
+    // }
+  
+    if (album.status === 'Ready to Print' && album.photos.length >= album.photoLimit) {
+      Alert.alert(
+        'Album is Full',
+        'You cannot add more photos because the album reached the photos limit. Delete some photos or buy more space.'
+      );
       return;
     }
   
     if (album.plusmode === 'off') {
-      // plus mode off, buy for $0.99
       Alert.alert(
         'Buy Plus Mode',
         'Enable plus mode for $0.99?',
@@ -298,7 +335,7 @@ const HomeScreen = (props) => {
         ]
       );
     } else {
-      // plus mode is on, open the gallery to pick one photo
+      // plus mode is on, add photo from gallery if not at limit
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission Denied', 'Need gallery permission.');
@@ -313,20 +350,18 @@ const HomeScreen = (props) => {
   };
 
   const handleProButtonPress = async (album) => {
-    if (album.demoMode === 'yes') {
-      Alert.alert('Upgrade Required', 'Please upgrade to real film first.');
-      return;
-    }
+    // Remove this:
+    // if (album.demoMode === 'yes') {
+    //   Alert.alert('Upgrade Required', 'Please upgrade to real film first.');
+    //   return;
+    // }
   
     if (album.promode === 'on') {
-      // Pro mode is on, show photos. Let the user delete if album is Active or Ready to Print
       const canDelete = (album.status === 'Active' || album.status === 'Ready to Print');
       navigation.navigate('Gallery', { albumId: album.id, albumName: album.name, proMode: true, canDelete });
       return;
     }
   
-    // If plusmode off, pro costs $2.99 and enables plus mode
-    // If plusmode on, pro costs $2.00
     let cost = 2.99;
     let message = 'Enable pro mode for $2.99? This will also enable plus mode.';
     if (album.plusmode === 'on') {
